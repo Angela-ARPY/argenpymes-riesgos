@@ -3,6 +3,13 @@ import { NextResponse } from 'next/server'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
+export const config = {
+  api: {
+    bodyParser: false,
+    responseLimit: false,
+  },
+}
+
 const CHECKLIST = {
   fisica: [
     { id: 'anexo4', label: 'Anexo IV – Res 212/2013', descripcion: 'Formulario Anexo IV de la resolución 212/2013, debe estar firmado por el titular' },
@@ -102,8 +109,16 @@ export async function POST(request) {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) return NextResponse.json({ error: 'API key no configurada' }, { status: 500 })
 
-    const formData = await request.formData()
-    const tipo = formData.get('tipo') // 'fisica' o 'juridica'
+    let formData
+    try {
+      formData = await request.formData()
+    } catch (e) {
+      return NextResponse.json({ 
+        error: 'Los archivos superan el límite. Subí los archivos en tandas más chicas (máx 15MB por vez).' 
+      }, { status: 413 })
+    }
+
+    const tipo = formData.get('tipo')
     const esRenovacion = formData.get('renovacion') === 'true'
     const esAgro = formData.get('agropecuaria') === 'true'
     const esConstruccion = formData.get('construccion') === 'true'
@@ -111,12 +126,15 @@ export async function POST(request) {
 
     if (!files.length) return NextResponse.json({ error: 'No se recibieron archivos' }, { status: 400 })
 
-    // Extract text from each file
     const documentos = []
     for (const file of files) {
-      const buffer = Buffer.from(await file.arrayBuffer())
-      const texto = await extractTextFromFile(buffer, file.name, file.type)
-      documentos.push({ nombre: file.name, tipo: file.type, texto: texto.slice(0, 8000) })
+      try {
+        const buffer = Buffer.from(await file.arrayBuffer())
+        const texto = await extractTextFromFile(buffer, file.name, file.type)
+        documentos.push({ nombre: file.name, tipo: file.type, texto: texto.slice(0, 5000) })
+      } catch (e) {
+        documentos.push({ nombre: file.name, tipo: file.type, texto: '[Error al leer el archivo: ' + e.message + ']' })
+      }
     }
 
     // Build checklist for this operation type

@@ -50,6 +50,14 @@ export default function Home() {
 
   async function analizar() {
     if (!tipo || archivos.length === 0) return
+
+    // Check total size
+    const totalMB = archivos.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024)
+    if (totalMB > 18) {
+      setError(`El total de archivos es ${totalMB.toFixed(1)}MB, que supera el límite de 18MB. Quitá algunos archivos grandes y subí el resto en una segunda tanda.`)
+      return
+    }
+
     setLoading(true)
     setError(null)
     setResultado(null)
