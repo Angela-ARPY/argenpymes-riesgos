@@ -3,12 +3,7 @@ import { NextResponse } from 'next/server'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-export const config = {
-  api: {
-    bodyParser: false,
-    responseLimit: false,
-  },
-}
+
 
 const CHECKLIST = {
   fisica: [
