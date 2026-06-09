@@ -3,8 +3,7 @@ import { useState, useRef } from 'react'
 
 const FILE_ICONS = {
   pdf: '📄', doc: '📝', docx: '📝', xls: '📊', xlsx: '📊',
-  jpg: '🖼️', jpeg: '🖼️', png: '🖼️', gif: '🖼️', webp: '🖼️',
-  txt: '📃', default: '📎'
+  jpg: '🖼️', jpeg: '🖼️', png: '🖼️', txt: '📃', default: '📎'
 }
 
 function getIcon(filename) {
@@ -18,6 +17,15 @@ function formatSize(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result.split(',')[1])
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
+}
+
 export default function Home() {
   const [tipo, setTipo] = useState(null)
   const [renovacion, setRenovacion] = useState(false)
@@ -26,6 +34,7 @@ export default function Home() {
   const [archivos, setArchivos] = useState([])
   const [dragOver, setDragOver] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [loadingMsg, setLoadingMsg] = useState('')
   const [resultado, setResultado] = useState(null)
   const [error, setError] = useState(null)
   const fileInputRef = useRef()
@@ -50,35 +59,76 @@ export default function Home() {
 
   async function analizar() {
     if (!tipo || archivos.length === 0) return
-
-    // Check total size
-    const totalMB = archivos.reduce((sum, f) => sum + f.size, 0) / (1024 * 1024)
-    if (totalMB > 18) {
-      setError(`El total de archivos es ${totalMB.toFixed(1)}MB, que supera el límite de 18MB. Quitá algunos archivos grandes y subí el resto en una segunda tanda.`)
-      return
-    }
-
     setLoading(true)
     setError(null)
     setResultado(null)
 
     try {
-      const form = new FormData()
-      form.append('tipo', tipo)
-      form.append('renovacion', renovacion)
-      form.append('agropecuaria', agropecuaria)
-      form.append('construccion', construccion)
-      archivos.forEach(f => form.append('archivos', f))
+      // Convert files to base64 in batches of 3
+      setLoadingMsg('Leyendo los archivos...')
+      const BATCH_SIZE = 3
+      let resultadoFinal = null
 
-      const res = await fetch('/api/analizar', { method: 'POST', body: form })
-      const data = await res.json()
+      for (let i = 0; i < archivos.length; i += BATCH_SIZE) {
+        const batch = archivos.slice(i, i + BATCH_SIZE)
+        setLoadingMsg(`Analizando archivos ${i + 1}–${Math.min(i + BATCH_SIZE, archivos.length)} de ${archivos.length}...`)
 
-      if (!res.ok) throw new Error(data.error || 'Error del servidor')
-      setResultado(data)
+        const archivosB64 = await Promise.all(batch.map(async f => ({
+          nombre: f.name,
+          mimeType: f.type,
+          contenido_base64: await fileToBase64(f)
+        })))
+
+        const res = await fetch('/api/analizar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo,
+            renovacion,
+            agropecuaria,
+            construccion,
+            archivos: archivosB64
+          })
+        })
+
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || 'Error del servidor')
+
+        if (!resultadoFinal) {
+          resultadoFinal = data
+        } else {
+          // Merge results: update existing items, add new ones
+          for (const item of data.resultados || []) {
+            const existing = resultadoFinal.resultados.find(r => r.id === item.id)
+            if (existing) {
+              if (item.estado === 'ok') Object.assign(existing, item)
+            } else {
+              resultadoFinal.resultados.push(item)
+            }
+          }
+          if (data.documentos_no_identificados?.length) {
+            resultadoFinal.documentos_no_identificados = [
+              ...(resultadoFinal.documentos_no_identificados || []),
+              ...data.documentos_no_identificados
+            ]
+          }
+        }
+      }
+
+      // Recalculate estado_general
+      const items = resultadoFinal.resultados || []
+      const faltantes = items.filter(r => r.estado === 'faltante').length
+      const incompletos = items.filter(r => r.estado === 'incompleto').length
+      if (faltantes > 0) resultadoFinal.estado_general = 'incompleto'
+      else if (incompletos > 0) resultadoFinal.estado_general = 'con_observaciones'
+      else resultadoFinal.estado_general = 'completo'
+
+      setResultado(resultadoFinal)
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
+      setLoadingMsg('')
     }
   }
 
@@ -111,31 +161,22 @@ export default function Home() {
       </header>
 
       <main className="main">
-
         {!resultado && !loading && (
           <>
-            {/* Tipo de solicitante */}
             <div className="card">
               <div className="card-title">Tipo de solicitante</div>
               <div className="type-grid">
-                <button
-                  className={`type-btn${tipo === 'fisica' ? ' selected' : ''}`}
-                  onClick={() => setTipo('fisica')}
-                >
+                <button className={`type-btn${tipo === 'fisica' ? ' selected' : ''}`} onClick={() => setTipo('fisica')}>
                   <div className="type-btn-title">Persona física / SH</div>
                   <div className="type-btn-desc">Titular individual o sociedad de hecho</div>
                 </button>
-                <button
-                  className={`type-btn${tipo === 'juridica' ? ' selected' : ''}`}
-                  onClick={() => setTipo('juridica')}
-                >
+                <button className={`type-btn${tipo === 'juridica' ? ' selected' : ''}`} onClick={() => setTipo('juridica')}>
                   <div className="type-btn-title">Persona jurídica</div>
                   <div className="type-btn-desc">SA, SRL, SAS u otra sociedad</div>
                 </button>
               </div>
             </div>
 
-            {/* Características */}
             <div className="card">
               <div className="card-title">Características de la operación</div>
               <div className="toggle-grid">
@@ -154,10 +195,8 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Upload */}
             <div className="card">
               <div className="card-title">Documentación a enviar</div>
-
               <div
                 className={`upload-zone${dragOver ? ' drag-over' : ''}`}
                 onDragOver={e => { e.preventDefault(); setDragOver(true) }}
@@ -200,7 +239,7 @@ export default function Home() {
 
             <button
               className="btn-analizar"
-              disabled={!tipo || archivos.length === 0 || loading}
+              disabled={!tipo || archivos.length === 0}
               onClick={analizar}
             >
               Analizar documentación
@@ -211,14 +250,13 @@ export default function Home() {
         {loading && (
           <div className="card loading-box">
             <div className="spinner"></div>
-            <div className="loading-title">Analizando los documentos...</div>
-            <div className="loading-sub">La IA está leyendo el contenido de cada archivo. Puede tardar hasta 30 segundos.</div>
+            <div className="loading-title">{loadingMsg || 'Analizando...'}</div>
+            <div className="loading-sub">La IA está leyendo el contenido de cada archivo. Puede tardar hasta un minuto.</div>
           </div>
         )}
 
         {resultado && (
           <>
-            {/* Banner general */}
             {(() => {
               const cfg = bannerConfig[resultado.estado_general] || bannerConfig.incompleto
               return (
@@ -232,7 +270,6 @@ export default function Home() {
               )
             })()}
 
-            {/* Items */}
             <div className="card">
               <div className="card-title">
                 Detalle por documento
@@ -248,9 +285,7 @@ export default function Home() {
                     <span className="result-status">{estadoIcon[item.estado]}</span>
                     <div className="result-content">
                       <div className="result-label">{item.label}</div>
-                      {item.archivo_encontrado && (
-                        <div className="result-file">Archivo: {item.archivo_encontrado}</div>
-                      )}
+                      {item.archivo_encontrado && <div className="result-file">Archivo: {item.archivo_encontrado}</div>}
                       <div className="result-obs">{item.observacion}</div>
                     </div>
                   </div>
