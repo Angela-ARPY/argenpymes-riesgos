@@ -38,6 +38,7 @@ export default function Home() {
   const [resultado, setResultado] = useState(null)
   const [error, setError] = useState(null)
   const fileInputRef = useRef()
+  const folderInputRef = useRef()
 
   function addFiles(newFiles) {
     const arr = Array.from(newFiles)
@@ -207,12 +208,25 @@ export default function Home() {
                 <div className="upload-icon">📂</div>
                 <div className="upload-title">Arrastrá los archivos acá o hacé click para seleccionarlos</div>
                 <div className="upload-sub">PDF, Word, Excel, imágenes — podés subir todos los documentos juntos</div>
+                <div style={{marginTop:'0.75rem', display:'flex', gap:'0.5rem', justifyContent:'center', flexWrap:'wrap'}}>
+                  <span style={{fontSize:'0.8rem', background:'var(--blue-light)', color:'var(--blue)', padding:'4px 12px', borderRadius:'99px', cursor:'pointer'}} onClick={e => {e.stopPropagation(); fileInputRef.current.click()}}>📄 Seleccionar archivos</span>
+                  <span style={{fontSize:'0.8rem', background:'#f0fdf4', color:'#15803d', padding:'4px 12px', borderRadius:'99px', cursor:'pointer'}} onClick={e => {e.stopPropagation(); folderInputRef.current.click()}}>📁 Seleccionar carpeta</span>
+                </div>
                 <input
                   ref={fileInputRef}
                   className="upload-input"
                   type="file"
                   multiple
                   accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,.gif,.webp,.txt"
+                  onChange={e => addFiles(e.target.files)}
+                />
+                <input
+                  ref={folderInputRef}
+                  className="upload-input"
+                  type="file"
+                  webkitdirectory="true"
+                  directory="true"
+                  multiple
                   onChange={e => addFiles(e.target.files)}
                 />
               </div>

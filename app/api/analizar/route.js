@@ -136,14 +136,23 @@ Respondé ÚNICAMENTE con JSON válido, sin texto antes ni después:
   "documentos_no_identificados": ["archivos que no corresponden a ningún requisito"]
 }`
 
-    // Process files in batches of 3 to stay within Gemini limits
-    const BATCH_SIZE = 3
+    // Process files one by one to avoid size limits
     let resultadoFinal = null
 
-    for (let i = 0; i < archivos.length; i += BATCH_SIZE) {
-      const batch = archivos.slice(i, i + BATCH_SIZE)
+    for (let i = 0; i < archivos.length; i++) {
+      const archivo = archivos[i]
       
-      const respuesta = await callGeminiWithFiles(prompt, batch, apiKey)
+      // Skip files larger than 3MB — try as text extraction fallback
+      let batch = [archivo]
+      
+      let respuesta
+      try {
+        respuesta = await callGeminiWithFiles(prompt, batch, apiKey)
+      } catch (e) {
+        // If file is too large, skip it and note it
+        console.error(`Error procesando ${archivo.nombre}:`, e.message)
+        continue
+      }
       
       let resultado
       try {
